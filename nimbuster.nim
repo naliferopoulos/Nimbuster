@@ -4,53 +4,67 @@
 
 # For Argument Parsing
 import parseopt
+import strutils
 
 # For HTTP Requests
 import httpcore
 import httpclient
 
-# Globals
-var url = ""
-var wordlist = ""
+# For Threading
+import threadpool
 
-# Parse the arguments
-for kind, key, value in getOpt():
-  case kind
-  of cmdLongOption, cmdShortOption:
-    case key
-    of "u":
-      echo "[URL] " & value
-      url = value
-    of "w":
-      echo "[WORDLIST] " & value  
-      wordlist = value
-    else:
-      echo "Unknown option: " & key
-      system.quit()
-  else:
-    discard
+const okStatusCodes = ["200 OK", "302 Redirect"]
 
-if url == "":
-  echo "No URL provided"
-  system.quit()
-
-if wordlist == "":
-  echo "No wordlist provided"
-  system.quit()
-
-let okStatusCodes = ["200 OK", "302 Redirect"]
-
-# Open the wordlist file
-let f = open(wordlist)
-
-# Spawn an HTTP Client
-var client = newHttpClient()
-
-for line in f.lines:
-  let resp = client.get(url & line)
-  echo $code(resp)
+# Scan a word
+proc scan_word(url: string) {.thread.}  =
+  let client = newHttpClient() 
+  let resp = client.get(url)
   if $code(resp) in okStatusCodes:
-    echo "[+] " & line & " " & $code(resp)
+    echo "[+] " & url & " (" & $code(resp) & ")"
 
-# Close the file when done
-f.close()
+proc main() =
+  # Globals
+  var url = ""
+  var wordlist = ""
+  
+  # Parse the arguments
+  for kind, key, value in getOpt():
+    case kind
+    of cmdLongOption, cmdShortOption:
+      case key
+      of "u":
+        echo "[URL] " & value
+        url = value
+      of "w":
+        echo "[WORDLIST] " & value  
+        wordlist = value
+      else:
+        echo "Unknown option: " & key
+        system.quit()
+    else:
+      discard
+  
+  # Check if the URL was provided
+  if url == "":
+    echo "No URL provided"
+    system.quit()
+  
+  # Check if a wordlist was provided
+  if wordlist == "":
+    echo "No wordlist provided"
+    system.quit()
+  
+  # Open the wordlist file
+  let f = open(wordlist)
+  
+  # Fill the wordlist array
+  for line in f.lines:
+    spawn scan_word(url & "/" & line)
+ 
+  sync()
+
+  # Close the file when done
+  f.close()
+  
+
+main()
